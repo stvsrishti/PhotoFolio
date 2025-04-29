@@ -9,12 +9,7 @@ import { getFirestore } from "firebase/firestore";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBjxBUWY--P89ErO66IdkUl_vjDwTfyiUs",
-  authDomain: "photofolio-4b528.firebaseapp.com",
-  projectId: "photofolio-4b528",
-  storageBucket: "photofolio-4b528.firebasestorage.app",
-  messagingSenderId: "473723153336",
-  appId: "1:473723153336:web:639376a5677f9ab87d7d4d"
+  //add your configurations
 };
 
 // Initialize Firebase
