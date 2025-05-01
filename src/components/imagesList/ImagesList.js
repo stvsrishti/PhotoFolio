@@ -1,35 +1,52 @@
 import styles from "./imageList.module.css";
 import { useState, useRef, useEffect } from "react";
+import { toast } from "react-toastify";
 import Spinner from "react-spinner-material";
+
+// components imports
 import { ImageForm } from "../imageForm/ImageForm";
 import { Carousel } from "../carousel/Carousel";
-import { db } from "../../firebase";
+
+// firebase imports
 import {
   collection,
-  addDoc,
   getDocs,
-  onSnapshot,
+  addDoc,
   deleteDoc,
-  doc,
   setDoc,
-  arrayUnion,
-  updateDoc,
+  Timestamp,
+  query,
+  orderBy,
+  doc,
 } from "firebase/firestore";
-import { toast } from "react-toastify";
-export const ImagesList = ({ onBack, albumName, currentAlbum }) => {
-  //These state and functions are create just for your convience you can create modify or delete the state as per your requirement.
+import { db } from "../../firebase";
+
+// storing images
+let IMAGES;
+
+// mock data
+// import { imagesData } from "../../static/mock";
+
+export const ImagesList = ({ albumId, albumName, onBack }) => {
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
+
   const [searchIntent, setSearchIntent] = useState(false);
   const searchInput = useRef();
+
   // async function
   const getImages = async () => {
     setLoading(true);
-    const unsub = onSnapshot(doc(db, "albums", currentAlbum.id), (doc) => {
-      //console.log("Current data: ", doc.data().images);
-      setImages(doc.data() ? doc.data().images : []);
-    });
-    //console.log(images);
+    const imagesRef = collection(db, "albums", albumId, "images");
+    const imagesSnapshot = await getDocs(
+      query(imagesRef, orderBy("created", "desc"))
+    );
+    const imagesData = imagesSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    setImages(imagesData);
+    IMAGES = imagesData;
     setLoading(false);
   };
 
@@ -39,98 +56,83 @@ export const ImagesList = ({ onBack, albumName, currentAlbum }) => {
 
   const [addImageIntent, setAddImageIntent] = useState(false);
   const [imgLoading, setImgLoading] = useState(false);
+
   const [updateImageIntent, setUpdateImageIntent] = useState(false);
-  const [updateImage, setUpdateImage] = useState(null);
+
   const [activeImageIndex, setActiveImageIndex] = useState(null);
   const [activeHoverImageIndex, setActiveHoverImageIndex] = useState(null);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(null);
 
-  // function to handle toggle next image
   const handleNext = () => {
-    if (activeImageIndex !== images.length - 1) {
-      setActiveImageIndex(activeImageIndex + 1);
-    }
+    if (activeImageIndex === images.length - 1) return setActiveImageIndex(0);
+    setActiveImageIndex((prev) => prev + 1);
   };
-  // function to handle toggle previous image
+
   const handlePrev = () => {
-    if (activeImageIndex != 0) {
-      setActiveImageIndex(activeImageIndex - 1);
-    }
+    if (activeImageIndex === 0) return setActiveImageIndex(images.length - 1);
+    setActiveImageIndex((prev) => prev - 1);
   };
-  // function to handle cancel
-  const handleCancel = () => {
-    setActiveImageIndex(null);
-  };
-  // function to handle search functionality for image
+  const handleCancel = () => setActiveImageIndex(null);
+
   const handleSearchClick = () => {
-    setSearchIntent(!searchIntent);
-  };
-  // function to handle search functionality for image
-  const handleSearch = () => {
-    const searchText = searchInput.current.value;
-    if (searchText.length > 0) {
-      let output = images.filter((image) =>
-        image.title.toLowerCase().includes(searchText.toLowerCase())
-      );
-      console.log(output);
-      setImages(output);
-    } else {
+    if (searchIntent) {
+      searchInput.current.value = "";
       getImages();
     }
+    setSearchIntent(!searchIntent);
+  };
+
+  const handleSearch = async () => {
+    const query = searchInput.current.value;
+    if (!query) return IMAGES;
+
+    const filteredImages = IMAGES.filter((i) => i.title.includes(query));
+    setImages(filteredImages);
   };
 
   // async functions
-  const handleAdd = async (imageTitle, imageUrl) => {
-    const existingImage = images.filter((image) => {
-      return image.title === imageTitle;
+  const handleAdd = async ({ title, url }) => {
+    setImgLoading(true);
+    const imageRef = await addDoc(collection(db, "albums", albumId, "images"), {
+      title,
+      url,
+      created: Timestamp.now(),
     });
-    if (existingImage.length > 0) {
-      setAddImageIntent(false);
-      toast.success("Image already exists.");
-      return;
-    }
-    const imgObj = { title: imageTitle, url: imageUrl };
-    await updateDoc(doc(db, "albums", currentAlbum.id), {
-      images: [imgObj, ...images],
-    });
-    //setImages(imagesArray);
-    setAddImageIntent(false);
-    toast.success("Image added to the album successfully.");
+    setImages((prev) => [{ id: imageRef.id, title, url }, ...prev]);
+
+    toast.success("Image added successfully.");
+    setImgLoading(false);
   };
-  // function to handle update image
-  const handleUpdate = async (title, url) => {
-    //console.log(images);
-    let temp = [...images];
-    temp.splice(selectedImageIndex, 1);
-    for (let i of temp) {
-      if (title === i.title) {
-        toast.error("Image Already Exists");
-        return;
-      }
-    }
-    const imgObj = { title, url };
 
-    images.splice(selectedImageIndex, 1, imgObj);
-    //console.log(currentAlbum.id, images);
-    await updateDoc(doc(db, "albums", currentAlbum.id), {
-      images: images,
+  const handleUpdate = async ({ title, url }) => {
+    setImgLoading(true);
+    const imageRef = doc(db, "albums", albumId, "images", updateImageIntent.id);
+
+    await setDoc(imageRef, {
+      title,
+      url,
     });
 
-    toast.success("Image Edited Successfully");
-    setSelectedImageIndex(null);
+    const updatedImages = images.map((image) => {
+      if (image.id === imageRef.id) {
+        return { id: imageRef.id, title, url };
+      }
+      return image;
+    });
+
+    setImages(updatedImages);
+    toast.success("Image updated successfully.");
+    setImgLoading(false);
     setUpdateImageIntent(false);
   };
-  // function to handle delete image
-  const handleDelete = async (e) => {
+
+  const handleDelete = async (e, id) => {
     e.stopPropagation();
-    images.splice(selectedImageIndex, 1);
-    const update = async () => {
-      await updateDoc(doc(db, "albums", currentAlbum.id), {
-        images: images,
-      });
-    };
-    update();
-    toast.success("Image Deleted Successfully");
+
+    await deleteDoc(doc(db, "albums", albumId, "images", id));
+    const filteredImages = images.filter((i) => i.id !== id);
+    setImages(filteredImages);
+
+    toast.success("Image deleted successfully.");
   };
 
   if (!images.length && !searchInput.current?.value && !loading) {
@@ -167,7 +169,6 @@ export const ImagesList = ({ onBack, albumName, currentAlbum }) => {
           albumName={albumName}
           onUpdate={handleUpdate}
           updateIntent={updateImageIntent}
-          updateImage={updateImage}
         />
       )}
       {(activeImageIndex || activeImageIndex === 0) && (
@@ -238,9 +239,7 @@ export const ImagesList = ({ onBack, albumName, currentAlbum }) => {
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setUpdateImageIntent(true);
-                  setUpdateImage(image);
-                  setSelectedImageIndex(i);
+                  setUpdateImageIntent(image);
                 }}
               >
                 <img src="/assets/edit.png" alt="update" />
@@ -260,7 +259,7 @@ export const ImagesList = ({ onBack, albumName, currentAlbum }) => {
                   currentTarget.src = "/assets/warning.png";
                 }}
               />
-              <span>{image.title}</span>
+              <span>{image.title.substring(0, 20)}</span>
             </div>
           ))}
         </div>
